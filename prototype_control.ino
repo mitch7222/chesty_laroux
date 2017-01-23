@@ -33,7 +33,8 @@ Private defines
 -----------------------------------------------------------------------------*/
 
 /* Pin numbers */
-#define PIN_ID_PUSH_BUTTON                          (2)
+#define PIN_ID_PUSH_BUTTON                          (A4)
+#define PIN_ID_PUSH_BUTTON2                         (A2)
 #define PIN_ID_FLOAT_SWITCH                         (A0)
 #define PIN_ID_POD_SWITCH                           (A1)
 
@@ -44,22 +45,25 @@ Private defines
 #define PIN_ID_METERING_MOTOR_REVERSE               (9)
 
 #define PIN_ID_LCD_RS                               (7)
-#define PIN_ID_LCD_ENABLE                           (11)
+#define PIN_ID_LCD_ENABLE                           (0)
 #define PIN_ID_LCD_D4                               (5)
 #define PIN_ID_LCD_D5                               (4)
-#define PIN_ID_LCD_D6                               (3)
+#define PIN_ID_LCD_D6                               (2)
 #define PIN_ID_LCD_D7                               (1)
 
 #define PIN_ID_RECIRCULTING_MIXING_PUMP_RELAY       (6)
-#define PN_ID_PELTIER_FAN_RELAY                     (7)
-#define PN_ID_LED                                   (10)
+#define PIN_ID_PELTIER_FAN_RELAY                    (A5)
+#define PIN_ID_LED                                  (10)
+#define PIN_ID_UV_LED                               (A3)
 
 /* Debounce values for push buttons and switches */
 #define PUSH_BUTTON_DEBOUNCE_MS                     (50)
+#define PUSH_BUTTON2_DEBOUNCE_MS                    (50)
 #define FLOAT_SWITCH_DEBOUNCE_MS                    (100)
 #define POD_SWITCH_DEBOUNCE_MS                      (100)
 
 #define DISPENS_TIME_MS                             (5000)
+#define CLEAN_TIME_MS                               (5000)
 
 #define TIMER_INVALID                               (0)
 
@@ -73,7 +77,8 @@ typedef enum
     STATE_READY,
     STATE_NO_POD,
     STATE_LOW_WATER,
-    STATE_DISPENSING
+    STATE_DISPENSING,
+    STATE_CLEANING,
 } state_t;
 
 /* The events that get passed into the state machine */
@@ -85,7 +90,8 @@ typedef enum
     EVENT_POD_REMOVED,
     EVENT_POD_REPLACED,
     EVENT_DISPENSE,
-    EVENT_TIMEOUT
+    EVENT_TIMEOUT,
+    EVENT_CLEAN,
 } event_t;
 
 /* Possible ways to drive the motor */
@@ -93,6 +99,7 @@ typedef enum
 {
     MOTOR_OFF,
     MOTOR_FORWARD,
+    MOTOR_FORWARD_SLOW,
     MOTOR_REVERSE
 } motor_state_t;
 
@@ -129,6 +136,7 @@ static unsigned long timer;
 
 /* device information */
 static push_button_t push_button;
+static push_button_t push_button2;
 static push_button_t float_switch;
 static push_button_t pod_switch;
 
@@ -138,6 +146,7 @@ static motor_t metering_motor;
 static output_t recirculating_mixing_pump;
 static output_t peltier_fan_relay;
 static output_t led;
+static output_t uv_led;
 
 /* LCD config */
 LiquidCrystal lcd(PIN_ID_LCD_RS, PIN_ID_LCD_ENABLE, PIN_ID_LCD_D4, PIN_ID_LCD_D5, PIN_ID_LCD_D6, PIN_ID_LCD_D7);
@@ -153,6 +162,7 @@ static bool ready_state(event_t new_event);
 static bool no_pod_state(event_t new_event);
 static bool low_water_state(event_t new_event);
 static bool dispensing_state(event_t new_event);
+static bool cleaning_state(event_t new_event);
 
 static event_t check_for_new_events(void);
 
@@ -160,6 +170,13 @@ static void enter_ready_state(void);
 static void enter_low_water_state(void);
 static void enter_dispensing_state(void);
 static void enter_pod_removed_state(void);
+static void enter_clean_state(void);
+
+static void exit_ready_state(void);
+static void exit_low_water_state(void);
+static void exit_dispensing_state(void);
+static void exit_cleaning_state(void);
+static void exit_pod_removed_state(void);
 
 static void set_timer(long timeout_ms);
 static bool check_timer_event(void);
@@ -191,14 +208,16 @@ void setup()
     init_push_button(&push_button, LOW, PIN_ID_PUSH_BUTTON, PUSH_BUTTON_DEBOUNCE_MS);
     init_push_button(&float_switch, HIGH, PIN_ID_FLOAT_SWITCH, FLOAT_SWITCH_DEBOUNCE_MS);
     init_push_button(&pod_switch, HIGH, PIN_ID_POD_SWITCH, POD_SWITCH_DEBOUNCE_MS);
+    init_push_button(&push_button2, LOW, PIN_ID_PUSH_BUTTON2, PUSH_BUTTON2_DEBOUNCE_MS);
 
     init_motor_pins(&dispensing_pump, PIN_ID_DISPENSING_PUMP_MOTOR_FORWARD, PIN_ID_DISPENSING_PUMP_MOTOR_REVERSE, MOTOR_OFF);
     init_motor_pins(&metering_motor, PIN_ID_METERING_MOTOR_FORWARD, PIN_ID_METERING_MOTOR_REVERSE, MOTOR_OFF);
 
     init_output(&recirculating_mixing_pump, PIN_ID_RECIRCULTING_MIXING_PUMP_RELAY, LOW);
-    init_output(&peltier_fan_relay, PN_ID_PELTIER_FAN_RELAY, LOW);
-    init_output(&led, PN_ID_LED, LOW);
-
+    init_output(&peltier_fan_relay, PIN_ID_PELTIER_FAN_RELAY, LOW);
+    init_output(&led, PIN_ID_LED, LOW);
+    init_output(&uv_led, PIN_ID_UV_LED, LOW);
+    
     init_state_machine();
 }
 
@@ -249,6 +268,9 @@ static bool run_state_machine(event_t new_event)
         case STATE_DISPENSING:
             handled = dispensing_state(new_event);
             break;
+        case STATE_CLEANING:
+            handled = cleaning_state(new_event);
+            break;
         default:
             handle_error("SM in wrong state");
             break;
@@ -269,15 +291,23 @@ static bool ready_state(event_t new_event)
     switch (new_event)
     {
         case EVENT_WATER_LEVEL_LOW:
+            exit_ready_state();
             enter_low_water_state();
             handled = true;
             break;
         case EVENT_POD_REMOVED:
+            exit_ready_state();
             enter_pod_removed_state();
             handled = true;
             break;
         case EVENT_DISPENSE:
+            exit_ready_state();
             enter_dispensing_state();
+            handled = true;
+            break;
+        case EVENT_CLEAN:
+            exit_ready_state();
+            enter_clean_state();
             handled = true;
             break;
     }
@@ -300,6 +330,7 @@ static bool no_pod_state(event_t new_event)
             /* The pod has been replaced but we just need to check that the water level
              * isn't low. If it is then we need to go to the low water state not the
              * ready state */
+            exit_pod_removed_state();
             if (get_push_button_state(&float_switch) == LOW)
             {
                 enter_low_water_state();
@@ -329,6 +360,7 @@ static bool low_water_state(event_t new_event)
         case EVENT_WATER_LEVEL_OKAY:
             /* The water is full but the pos may be removed so just just where
              * we should go - pos removed or ready */
+            exit_low_water_state();
             if (get_push_button_state(&pod_switch) == LOW)
             {
                 enter_pod_removed_state();
@@ -358,11 +390,42 @@ static bool dispensing_state(event_t new_event)
         case EVENT_TIMEOUT:
             /* We are done dispensing but may need to go to the pod removed
              * or the low water state instead of the ready state */
+            exit_dispensing_state();
             if (get_push_button_state(&pod_switch) == LOW)
             {
                 enter_pod_removed_state();
             }
             else if (get_push_button_state(&float_switch) == LOW)
+            {
+                enter_low_water_state();
+            }
+            else
+            {
+                enter_ready_state();
+            }
+            handled = true;
+            break;
+    }
+    return handled;
+}
+
+/*************************************************************************//**
+ * \brief Handles the events when we are in the cleaning state
+ *
+ * \param new_event - The event to be passed into the state machine
+ *
+ * \return If the event was was actioned or not
+ ****************************************************************************/
+static bool cleaning_state(event_t new_event)
+{
+    bool handled = false;
+    switch (new_event)
+    {
+        case EVENT_TIMEOUT:
+            /* We are done cleaning but may need to go to 
+             * the low water state instead of the ready state */
+            exit_cleaning_state();
+            if (get_push_button2_state(&float_switch) == LOW)
             {
                 enter_low_water_state();
             }
@@ -408,7 +471,10 @@ static event_t check_for_new_events(void)
     {
         event = EVENT_TIMEOUT;
     }
-
+    else if (check_for_push_button_event(&float_switch, HIGH))
+    {
+        event = EVENT_CLEAN;
+    }
     return event;
 }
 
@@ -419,18 +485,11 @@ static void enter_ready_state(void)
 {
     display_text("Ready");
 
-    /* Turn the motors off */
-    set_motor_state(&dispensing_pump, MOTOR_OFF);
-    set_motor_state(&metering_motor, MOTOR_OFF);
-
     /* Turn on recirculating pump */
     set_output_state(&recirculating_mixing_pump, HIGH);
 
     /* Turn on the peltier and fan */
     set_output_state(&peltier_fan_relay, HIGH);
-
-    /* Turn off the LED */
-    set_output_state(&led, LOW);
 
     sm_current_state = STATE_READY;
 }
@@ -441,8 +500,6 @@ static void enter_ready_state(void)
 static void enter_low_water_state(void)
 {
     display_text("Low water");
-    //turn off recurculating pump
-    set_output_state(&recirculating_mixing_pump, LOW);
 
     sm_current_state = STATE_LOW_WATER;
 }
@@ -453,13 +510,13 @@ static void enter_low_water_state(void)
 static void enter_dispensing_state(void)
 {
     display_text("Dispensing");
-    //turn off recirculating pump
-    set_output_state(&recirculating_mixing_pump, LOW);
-
     //turn on dispensing pump
-    set_motor_state(&dispensing_pump, MOTOR_FORWARD);
+    set_motor_state(&dispensing_pump, MOTOR_FORWARD_SLOW);
     set_motor_state(&metering_motor, MOTOR_FORWARD);
 
+    //turn on LED
+    set_led_state(led, HIGH));
+    
     //start timer
     set_timer(DISPENS_TIME_MS);
 
@@ -473,6 +530,69 @@ static void enter_pod_removed_state(void)
 {
     display_text("Replace Pod");
     sm_current_state = STATE_NO_POD;
+}
+
+/*************************************************************************//**
+ * \brief Puts all the peripherals into the dispensing state
+ ****************************************************************************/
+static void enter_clean_state(void)
+{
+    display_text("Cleaning");
+
+    //turn on dispensing pump
+    set_motor_state(&dispensing_pump, MOTOR_FORWARD);
+
+    //turn on UV LEDs
+    set_output_state(&uv_led, HIGH));
+
+    //start timer
+    set_timer(CLEAN_TIME_MS);
+
+    sm_current_state = STATE_DISPENSING;
+}
+
+/*************************************************************************//**
+ * \brief Handles any clean up required when exiting the state
+ ****************************************************************************/
+static void exit_ready_state(void)
+{
+    //turn off recurculating pump
+    set_output_state(&recirculating_mixing_pump, LOW);
+}
+
+/*************************************************************************//**
+ * \brief Handles any clean up required when exiting the state
+ ****************************************************************************/
+static void exit_low_water_state(void)
+{
+}
+
+/*************************************************************************//**
+ * \brief Handles any clean up required when exiting the state
+ ****************************************************************************/
+static void exit_dispensing_state(void)
+{
+    set_motor_state(&dispensing_pump, MOTOR_OFF);
+    set_motor_state(&metering_motor, MOTOR_OFF);
+
+    set_led_state(led, LOW));
+}
+
+/*************************************************************************//**
+ * \brief Handles any clean up required when exiting the state
+ ****************************************************************************/
+static void exit_pod_removed_state(void)
+{
+}
+
+/*************************************************************************//**
+ * \brief Handles any clean up required when exiting the state
+ ****************************************************************************/
+static void exit_cleaning_state(void)
+{
+    set_motor_state(&dispensing_pump, MOTOR_OFF);
+
+    set_output_state(&uv_led, LOW));
 }
 
 /*************************************************************************//**
@@ -658,14 +778,22 @@ static void set_motor_state(motor_t *motor_info, motor_state_t new_state)
         case MOTOR_OFF:
             digitalWrite(motor_info->forward_pin, HIGH);
             digitalWrite(motor_info->reverse_pin, HIGH);
+            analogWrite(11, 255);
             break;
         case MOTOR_FORWARD:
             digitalWrite(motor_info->forward_pin, HIGH);
             digitalWrite(motor_info->reverse_pin, LOW);
+            analogWrite(11, 255);
+            break;
+        case MOTOR_FORWARD_SLOW:
+            digitalWrite(motor_info->forward_pin, HIGH);
+            digitalWrite(motor_info->reverse_pin, LOW);
+            analogWrite(11, 130);    //Spins the pump on Channel B at half speed
             break;
         case MOTOR_REVERSE:
             digitalWrite(motor_info->forward_pin, LOW);
             digitalWrite(motor_info->reverse_pin, HIGH);
+            analogWrite(11, 255);
             break;
         default:
             handle_error("bad Motor state");
