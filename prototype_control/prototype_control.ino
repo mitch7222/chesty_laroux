@@ -520,7 +520,7 @@ static void enter_dispensing_state(void)
     set_output_state(&recirculating_mixing_pump, LOW);
 
     //turn on LED
-    set_led_state(led, HIGH));
+    set_output_state(&led, HIGH);
     
     //start timer
     set_timer(DISPENS_TIME_MS);
@@ -550,7 +550,7 @@ static void enter_clean_state(void)
     set_motor_state(&dispensing_pump, PUMP_FORWARD);
 
     //turn on UV LEDs
-    set_output_state(&uv_led, HIGH));
+    set_output_state(&uv_led, HIGH);
 
     //start timer
     set_timer(CLEAN_TIME_MS);
@@ -582,7 +582,7 @@ static void exit_dispensing_state(void)
     set_motor_state(&dispensing_pump, PUMP_OFF);
     set_motor_state(&metering_motor, MOTOR_OFF);
 
-    set_led_state(led, LOW));
+    set_output_state(&led, LOW);
 }
 
 /*************************************************************************//**
@@ -599,7 +599,7 @@ static void exit_cleaning_state(void)
 {
     set_motor_state(&dispensing_pump, PUMP_OFF);
 
-    set_output_state(&uv_led, LOW));
+    set_output_state(&uv_led, LOW);
 }
 
 /*************************************************************************//**
