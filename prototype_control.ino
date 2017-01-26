@@ -425,7 +425,7 @@ static bool cleaning_state(event_t new_event)
             /* We are done cleaning but may need to go to 
              * the low water state instead of the ready state */
             exit_cleaning_state();
-            if (get_push_button2_state(&float_switch) == LOW)
+            if (get_push_button_state(&float_switch) == LOW)
             {
                 enter_low_water_state();
             }
