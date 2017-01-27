@@ -38,8 +38,8 @@ Private defines
 #define PIN_ID_FLOAT_SWITCH                         (A0)
 #define PIN_ID_POD_SWITCH                           (A1)
 
-#define PIN_ID_DISPENSING_PUMP_MOTOR_FORWARD        (13)
-#define PIN_ID_DISPENSING_PUMP_MOTOR_REVERSE        (8)
+#define PIN_ID_DISPENSING_PUMP_PUMP_FORWARD        (13)
+#define PIN_ID_DISPENSING_PUMP_PUMP_REVERSE        (8)
 
 #define PIN_ID_METERING_MOTOR_FORWARD               (12)
 #define PIN_ID_METERING_MOTOR_REVERSE               (9)
@@ -99,8 +99,10 @@ typedef enum
 {
     MOTOR_OFF,
     MOTOR_FORWARD,
-    MOTOR_FORWARD_SLOW,
-    MOTOR_REVERSE
+    MOTOR_REVERSE,
+    PUMP_OFF,
+    PUMP_FORWARD,
+    PUMP_REVERSE
 } motor_state_t;
 
 /* All the information assiciated with a push button */
@@ -210,7 +212,7 @@ void setup()
     init_push_button(&pod_switch, HIGH, PIN_ID_POD_SWITCH, POD_SWITCH_DEBOUNCE_MS);
     init_push_button(&push_button2, LOW, PIN_ID_PUSH_BUTTON2, PUSH_BUTTON2_DEBOUNCE_MS);
 
-    init_motor_pins(&dispensing_pump, PIN_ID_DISPENSING_PUMP_MOTOR_FORWARD, PIN_ID_DISPENSING_PUMP_MOTOR_REVERSE, MOTOR_OFF);
+    init_motor_pins(&dispensing_pump, PIN_ID_DISPENSING_PUMP_PUMP_FORWARD, PIN_ID_DISPENSING_PUMP_PUMP_REVERSE, PUMP_OFF);
     init_motor_pins(&metering_motor, PIN_ID_METERING_MOTOR_FORWARD, PIN_ID_METERING_MOTOR_REVERSE, MOTOR_OFF);
 
     init_output(&recirculating_mixing_pump, PIN_ID_RECIRCULTING_MIXING_PUMP_RELAY, LOW);
@@ -510,12 +512,15 @@ static void enter_low_water_state(void)
 static void enter_dispensing_state(void)
 {
     display_text("Dispensing");
-    //turn on dispensing pump
-    set_motor_state(&dispensing_pump, MOTOR_FORWARD_SLOW);
+    //turn on dispensing pump & metering motor
+    set_motor_state(&dispensing_pump, PUMP_FORWARD);
     set_motor_state(&metering_motor, MOTOR_FORWARD);
 
+    //turn off recirculating pump
+    set_output_state(&recirculating_mixing_pump, LOW);
+
     //turn on LED
-    set_led_state(led, HIGH));
+    set_output_state(&led, HIGH);
     
     //start timer
     set_timer(DISPENS_TIME_MS);
@@ -530,20 +535,22 @@ static void enter_pod_removed_state(void)
 {
     display_text("Replace Pod");
     sm_current_state = STATE_NO_POD;
+
+  
 }
 
 /*************************************************************************//**
- * \brief Puts all the peripherals into the dispensing state
+ * \brief Puts all the peripherals into the cleaning state
  ****************************************************************************/
 static void enter_clean_state(void)
 {
     display_text("Cleaning");
 
     //turn on dispensing pump
-    set_motor_state(&dispensing_pump, MOTOR_FORWARD);
+    set_motor_state(&dispensing_pump, PUMP_FORWARD);
 
     //turn on UV LEDs
-    set_output_state(&uv_led, HIGH));
+    set_output_state(&uv_led, HIGH);
 
     //start timer
     set_timer(CLEAN_TIME_MS);
@@ -557,7 +564,7 @@ static void enter_clean_state(void)
 static void exit_ready_state(void)
 {
     //turn off recurculating pump
-    set_output_state(&recirculating_mixing_pump, LOW);
+    set_output_state(&recirculating_mixing_pump, LOW );
 }
 
 /*************************************************************************//**
@@ -572,10 +579,10 @@ static void exit_low_water_state(void)
  ****************************************************************************/
 static void exit_dispensing_state(void)
 {
-    set_motor_state(&dispensing_pump, MOTOR_OFF);
+    set_motor_state(&dispensing_pump, PUMP_OFF);
     set_motor_state(&metering_motor, MOTOR_OFF);
 
-    set_led_state(led, LOW));
+    set_output_state(&led, LOW);
 }
 
 /*************************************************************************//**
@@ -590,9 +597,9 @@ static void exit_pod_removed_state(void)
  ****************************************************************************/
 static void exit_cleaning_state(void)
 {
-    set_motor_state(&dispensing_pump, MOTOR_OFF);
+    set_motor_state(&dispensing_pump, PUMP_OFF);
 
-    set_output_state(&uv_led, LOW));
+    set_output_state(&uv_led, LOW);
 }
 
 /*************************************************************************//**
@@ -778,23 +785,34 @@ static void set_motor_state(motor_t *motor_info, motor_state_t new_state)
         case MOTOR_OFF:
             digitalWrite(motor_info->forward_pin, HIGH);
             digitalWrite(motor_info->reverse_pin, HIGH);
+            analogWrite(3, 255);
+            break;
+        case PUMP_OFF:
+            digitalWrite(motor_info->forward_pin, HIGH);
+            digitalWrite(motor_info->reverse_pin, HIGH);
             analogWrite(11, 255);
             break;
         case MOTOR_FORWARD:
             digitalWrite(motor_info->forward_pin, HIGH);
             digitalWrite(motor_info->reverse_pin, LOW);
-            analogWrite(11, 255);
+            analogWrite(3, 255);
             break;
-        case MOTOR_FORWARD_SLOW:
+        case PUMP_FORWARD:
             digitalWrite(motor_info->forward_pin, HIGH);
             digitalWrite(motor_info->reverse_pin, LOW);
-            analogWrite(11, 130);    //Spins the pump on Channel B at half speed
-            break;
+            analogWrite(11, 130);
+            break;      
         case MOTOR_REVERSE:
+            digitalWrite(motor_info->forward_pin, LOW);
+            digitalWrite(motor_info->reverse_pin, HIGH);
+            analogWrite(3, 255);
+            break;
+        case PUMP_REVERSE:
             digitalWrite(motor_info->forward_pin, LOW);
             digitalWrite(motor_info->reverse_pin, HIGH);
             analogWrite(11, 255);
             break;
+        
         default:
             handle_error("bad Motor state");
             break;
