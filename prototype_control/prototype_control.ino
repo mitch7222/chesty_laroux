@@ -157,8 +157,6 @@ LiquidCrystal lcd(PIN_ID_LCD_RS, PIN_ID_LCD_ENABLE, PIN_ID_LCD_D4, PIN_ID_LCD_D5
 Private functions Prototypes - declare static
 -----------------------------------------------------------------------------*/
 
-static void dump_input_state(void);
-
 static void init_state_machine(void);
 static bool run_state_machine(event_t new_event);
 
@@ -230,35 +228,13 @@ void setup()
  ****************************************************************************/
 void loop()
 {
-    dump_input_state();
-//    event_t new_event = check_for_new_events();
-//    run_state_machine(new_event);
-
+    event_t new_event = check_for_new_events();
+    run_state_machine(new_event);
 }
 
 /*-----------------------------------------------------------------------------
 Private Function implementations
 -----------------------------------------------------------------------------*/
-
-static void dump_input_state(void)
-{
-    char str[] = "          ";
-    unsigned buttons[] = {PIN_ID_PUSH_BUTTON, PIN_ID_FLOAT_SWITCH, PIN_ID_POD_SWITCH, PIN_ID_PUSH_BUTTON2};
-    int i = 0;
-
-    for (i = 0; i < (sizeof(buttons)/sizeof(unsigned)); i++)
-    {
-        if (digitalRead(buttons[i]))
-        {
-            str[i] = '1';
-        }
-        else
-        {
-            str[i] = '0';
-        }
-    }
-    display_text(str);
-}
 
 /*************************************************************************//**
  * \brief Initialises the state machine. Set the variables and puts sets up any
@@ -497,7 +473,7 @@ static event_t check_for_new_events(void)
     {
         event = EVENT_TIMEOUT;
     }
-    else if (check_for_push_button_event(&float_switch, HIGH))
+    else if (check_for_push_button_event(&push_button2, HIGH))
     {
         event = EVENT_CLEAN;
     }
