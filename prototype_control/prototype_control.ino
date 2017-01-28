@@ -333,7 +333,7 @@ static bool no_pod_state(event_t new_event)
              * isn't low. If it is then we need to go to the low water state not the
              * ready state */
             exit_pod_removed_state();
-            if (get_push_button_state(&float_switch) == LOW)
+            if (get_push_button_state(&float_switch) == HIGH)
             {
                 enter_low_water_state();
             }
@@ -363,7 +363,7 @@ static bool low_water_state(event_t new_event)
             /* The water is full but the pos may be removed so just just where
              * we should go - pos removed or ready */
             exit_low_water_state();
-            if (get_push_button_state(&pod_switch) == LOW)
+            if (get_push_button_state(&pod_switch) == HIGH)
             {
                 enter_pod_removed_state();
             }
@@ -393,11 +393,11 @@ static bool dispensing_state(event_t new_event)
             /* We are done dispensing but may need to go to the pod removed
              * or the low water state instead of the ready state */
             exit_dispensing_state();
-            if (get_push_button_state(&pod_switch) == LOW)
+            if (get_push_button_state(&pod_switch) == HIGH)
             {
                 enter_pod_removed_state();
             }
-            else if (get_push_button_state(&float_switch) == LOW)
+            else if (get_push_button_state(&float_switch) == HIGH)
             {
                 enter_low_water_state();
             }
@@ -427,7 +427,7 @@ static bool cleaning_state(event_t new_event)
             /* We are done cleaning but may need to go to 
              * the low water state instead of the ready state */
             exit_cleaning_state();
-            if (get_push_button_state(&float_switch) == LOW)
+            if (get_push_button_state(&float_switch) == HIGH)
             {
                 enter_low_water_state();
             }
