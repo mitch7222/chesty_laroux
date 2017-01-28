@@ -208,8 +208,8 @@ void setup()
     init_lcd();
 
     init_push_button(&push_button, LOW, PIN_ID_PUSH_BUTTON, PUSH_BUTTON_DEBOUNCE_MS);
-    init_push_button(&float_switch, HIGH, PIN_ID_FLOAT_SWITCH, FLOAT_SWITCH_DEBOUNCE_MS);
-    init_push_button(&pod_switch, HIGH, PIN_ID_POD_SWITCH, POD_SWITCH_DEBOUNCE_MS);
+    init_push_button(&float_switch, LOW, PIN_ID_FLOAT_SWITCH, FLOAT_SWITCH_DEBOUNCE_MS);
+    init_push_button(&pod_switch, LOW, PIN_ID_POD_SWITCH, POD_SWITCH_DEBOUNCE_MS);
     init_push_button(&push_button2, LOW, PIN_ID_PUSH_BUTTON2, PUSH_BUTTON2_DEBOUNCE_MS);
 
     init_motor_pins(&dispensing_pump, PIN_ID_DISPENSING_PUMP_PUMP_FORWARD, PIN_ID_DISPENSING_PUMP_PUMP_REVERSE, PUMP_OFF);
@@ -453,19 +453,19 @@ static event_t check_for_new_events(void)
     {
         event = EVENT_DISPENSE;
     }
-    else if (check_for_push_button_event(&float_switch, HIGH))
+    else if (check_for_push_button_event(&float_switch, LOW))
     {
         event = EVENT_WATER_LEVEL_OKAY;
     }
-    else if (check_for_push_button_event(&float_switch, LOW))
+    else if (check_for_push_button_event(&float_switch, HIGH))
     {
         event = EVENT_WATER_LEVEL_LOW;
     }
-    else if (check_for_push_button_event(&pod_switch, HIGH))
+    else if (check_for_push_button_event(&pod_switch, LOW))
     {
         event = EVENT_POD_REPLACED;
     }
-    else if (check_for_push_button_event(&pod_switch, LOW))
+    else if (check_for_push_button_event(&pod_switch, HIGH))
     {
         event = EVENT_POD_REMOVED;
     }
