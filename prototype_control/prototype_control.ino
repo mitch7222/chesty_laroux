@@ -8,29 +8,29 @@
  *---------------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------------
-System level includes
------------------------------------------------------------------------------*/
+ System level includes
+ -----------------------------------------------------------------------------*/
 
 #include <LiquidCrystal.h>
 
 /*-----------------------------------------------------------------------------
-Project level includes
------------------------------------------------------------------------------*/
+ Project level includes
+ -----------------------------------------------------------------------------*/
 /* None */
 
 /*-----------------------------------------------------------------------------
-Local includes
------------------------------------------------------------------------------*/
+ Local includes
+ -----------------------------------------------------------------------------*/
 /* None */
 
 /*-----------------------------------------------------------------------------
-Public data
------------------------------------------------------------------------------*/
+ Public data
+ -----------------------------------------------------------------------------*/
 /* None */
 
 /*-----------------------------------------------------------------------------
-Private defines
------------------------------------------------------------------------------*/
+ Private defines
+ -----------------------------------------------------------------------------*/
 
 /* Pin numbers */
 #define PIN_ID_PUSH_BUTTON                          (A4)
@@ -40,9 +40,11 @@ Private defines
 
 #define PIN_ID_DISPENSING_PUMP_PUMP_FORWARD        (13)
 #define PIN_ID_DISPENSING_PUMP_PUMP_REVERSE        (8)
+#define PIN_ID_DISPENSING_PUMP_PUMP_ANALOG         (11)
 
 #define PIN_ID_METERING_MOTOR_FORWARD               (12)
 #define PIN_ID_METERING_MOTOR_REVERSE               (9)
+#define PIN_ID_METERING_MOTOR_ANALOG                (3)
 
 #define PIN_ID_LCD_RS                               (7)
 #define PIN_ID_LCD_ENABLE                           (0)
@@ -68,17 +70,13 @@ Private defines
 #define TIMER_INVALID                               (0)
 
 /*-----------------------------------------------------------------------------
-Private data types
------------------------------------------------------------------------------*/
+ Private data types
+ -----------------------------------------------------------------------------*/
 
 /* The states for the state machine */
 typedef enum
 {
-    STATE_READY,
-    STATE_NO_POD,
-    STATE_LOW_WATER,
-    STATE_DISPENSING,
-    STATE_CLEANING,
+    STATE_READY, STATE_NO_POD, STATE_LOW_WATER, STATE_DISPENSING, STATE_CLEANING,
 } state_t;
 
 /* The events that get passed into the state machine */
@@ -100,9 +98,6 @@ typedef enum
     MOTOR_OFF,
     MOTOR_FORWARD,
     MOTOR_REVERSE,
-    PUMP_OFF,
-    PUMP_FORWARD,
-    PUMP_REVERSE
 } motor_state_t;
 
 /* All the information assiciated with a push button */
@@ -119,6 +114,7 @@ typedef struct
 {
     int forward_pin; /* Forward pin number */
     int reverse_pin; /* Reverse pin number */
+    int speed_pin; /* Analog speed pib */
 } motor_t;
 
 typedef struct
@@ -127,8 +123,8 @@ typedef struct
 } output_t;
 
 /*-----------------------------------------------------------------------------
-Private data - declare static
------------------------------------------------------------------------------*/
+ Private data - declare static
+ -----------------------------------------------------------------------------*/
 
 /* state machine current state */
 static state_t sm_current_state;
@@ -154,8 +150,8 @@ static output_t uv_led;
 LiquidCrystal lcd(PIN_ID_LCD_RS, PIN_ID_LCD_ENABLE, PIN_ID_LCD_D4, PIN_ID_LCD_D5, PIN_ID_LCD_D6, PIN_ID_LCD_D7);
 
 /*-----------------------------------------------------------------------------
-Private functions Prototypes - declare static
------------------------------------------------------------------------------*/
+ Private functions Prototypes - declare static
+ -----------------------------------------------------------------------------*/
 
 static void init_state_machine(void);
 static bool run_state_machine(event_t new_event);
@@ -184,21 +180,28 @@ static void set_timer(long timeout_ms);
 static bool check_timer_event(void);
 
 static void init_lcd(void);
-static void init_push_button(push_button_t *button_info, int off_state, int pin_id, int debounce_time_ms);
-static void init_motor_pins(motor_t *motor_info, int forward_pin, int reverse_pin, motor_state_t initial_state);
+static void init_push_button(push_button_t *button_info,
+                             int off_state,
+                             int pin_id,
+                             int debounce_time_ms);
+static void init_motor_pins(motor_t *motor_info,
+                            int forward_pin,
+                            int reverse_pin,
+                            int speed_pin,
+                            motor_state_t initial_state);
 static void init_output(output_t *output_info, int pin_id, int initial_state);
 
 static bool check_for_push_button_event(push_button_t *pin_info, int new_state);
 static int get_push_button_state(push_button_t *pin_info);
-static void set_motor_state(motor_t *motor_info, motor_state_t new_state);
+static void set_motor_speed(motor_t *motor_info, motor_state_t direction, unsigned char motor_speed);
 static void set_output_state(output_t *output_info, int new_state);
 
 static void display_text(const char *str);
 static void handle_error(const char *error_str);
 
 /*-----------------------------------------------------------------------------
-Public Function implementations
------------------------------------------------------------------------------*/
+ Public Function implementations
+ -----------------------------------------------------------------------------*/
 
 /*************************************************************************//**
  * \brief Call by Arduino to initialise everything
@@ -212,14 +215,22 @@ void setup()
     init_push_button(&pod_switch, LOW, PIN_ID_POD_SWITCH, POD_SWITCH_DEBOUNCE_MS);
     init_push_button(&push_button2, LOW, PIN_ID_PUSH_BUTTON2, PUSH_BUTTON2_DEBOUNCE_MS);
 
-    init_motor_pins(&dispensing_pump, PIN_ID_DISPENSING_PUMP_PUMP_FORWARD, PIN_ID_DISPENSING_PUMP_PUMP_REVERSE, PUMP_OFF);
-    init_motor_pins(&metering_motor, PIN_ID_METERING_MOTOR_FORWARD, PIN_ID_METERING_MOTOR_REVERSE, MOTOR_OFF);
+    init_motor_pins(&dispensing_pump,
+                    PIN_ID_DISPENSING_PUMP_PUMP_FORWARD,
+                    PIN_ID_DISPENSING_PUMP_PUMP_REVERSE,
+                    PIN_ID_DISPENSING_PUMP_PUMP_ANALOG,
+                    MOTOR_OFF);
+    init_motor_pins(&metering_motor,
+                    PIN_ID_METERING_MOTOR_FORWARD,
+                    PIN_ID_METERING_MOTOR_REVERSE,
+                    PIN_ID_METERING_MOTOR_ANALOG,
+                    MOTOR_OFF);
 
     init_output(&recirculating_mixing_pump, PIN_ID_RECIRCULTING_MIXING_PUMP_RELAY, LOW);
     init_output(&peltier_fan_relay, PIN_ID_PELTIER_FAN_RELAY, LOW);
     init_output(&led, PIN_ID_LED, LOW);
     init_output(&uv_led, PIN_ID_UV_LED, LOW);
-    
+
     init_state_machine();
 }
 
@@ -233,8 +244,8 @@ void loop()
 }
 
 /*-----------------------------------------------------------------------------
-Private Function implementations
------------------------------------------------------------------------------*/
+ Private Function implementations
+ -----------------------------------------------------------------------------*/
 
 /*************************************************************************//**
  * \brief Initialises the state machine. Set the variables and puts sets up any
@@ -513,15 +524,15 @@ static void enter_dispensing_state(void)
 {
     display_text("Dispensing");
     //turn on dispensing pump & metering motor
-    set_motor_state(&dispensing_pump, PUMP_FORWARD);
-    set_motor_state(&metering_motor, MOTOR_FORWARD);
+    set_motor_speed(&dispensing_pump, MOTOR_FORWARD, 130);
+    set_motor_speed(&metering_motor, MOTOR_FORWARD, 255);
 
     //turn off recirculating pump
     set_output_state(&recirculating_mixing_pump, LOW);
 
     //turn on LED
     set_output_state(&led, HIGH);
-    
+
     //start timer
     set_timer(DISPENS_TIME_MS);
 
@@ -536,7 +547,6 @@ static void enter_pod_removed_state(void)
     display_text("Replace Pod");
     sm_current_state = STATE_NO_POD;
 
-  
 }
 
 /*************************************************************************//**
@@ -547,7 +557,7 @@ static void enter_clean_state(void)
     display_text("Cleaning");
 
     //turn on dispensing pump
-    set_motor_state(&dispensing_pump, PUMP_FORWARD);
+    set_motor_speed(&dispensing_pump, MOTOR_FORWARD, 130);
 
     //turn on UV LEDs
     set_output_state(&uv_led, HIGH);
@@ -564,7 +574,7 @@ static void enter_clean_state(void)
 static void exit_ready_state(void)
 {
     //turn off recurculating pump
-    set_output_state(&recirculating_mixing_pump, LOW );
+    set_output_state(&recirculating_mixing_pump, LOW);
 }
 
 /*************************************************************************//**
@@ -579,8 +589,8 @@ static void exit_low_water_state(void)
  ****************************************************************************/
 static void exit_dispensing_state(void)
 {
-    set_motor_state(&dispensing_pump, PUMP_OFF);
-    set_motor_state(&metering_motor, MOTOR_OFF);
+    set_motor_speed(&dispensing_pump, MOTOR_OFF, 0);
+    set_motor_speed(&metering_motor, MOTOR_OFF, 0);
 
     set_output_state(&led, LOW);
 }
@@ -597,7 +607,7 @@ static void exit_pod_removed_state(void)
  ****************************************************************************/
 static void exit_cleaning_state(void)
 {
-    set_motor_state(&dispensing_pump, PUMP_OFF);
+    set_motor_speed(&dispensing_pump, MOTOR_OFF, 0);
 
     set_output_state(&uv_led, LOW);
 }
@@ -641,7 +651,7 @@ static bool check_timer_event(void)
         {
             /* Just put in a check to make sure the timer hasn't wrapped around
              * If the time is greater than 1 day then the value has wrapped around */
-            if (millis() - timer > (24*60*60*1000))
+            if (millis() - timer > (24 * 60 * 60 * 1000))
             {
                 /* Do nothing wait for the time to catch up */
             }
@@ -684,7 +694,10 @@ static void init_lcd(void)
  * \param pin_id - The pin number.
  * \param debounce_time_ms - Time before the pin is considered settled in milliseconds.
  ****************************************************************************/
-static void init_push_button(push_button_t *button_info, int off_state, int pin_id, int debounce_time_ms)
+static void init_push_button(push_button_t *button_info,
+                             int off_state,
+                             int pin_id,
+                             int debounce_time_ms)
 {
     pinMode(pin_id, INPUT_PULLUP);
     button_info->last_state = off_state;
@@ -702,14 +715,19 @@ static void init_push_button(push_button_t *button_info, int off_state, int pin_
  * \param initial_state - The initial state that you want the motor to be in.
  *                          (MOTOR_OFF/MOTOR_FORWARD/MOTOR_REVERSE)
  ****************************************************************************/
-static void init_motor_pins(motor_t *motor_info, int forward_pin, int reverse_pin, motor_state_t initial_state)
+static void init_motor_pins(motor_t *motor_info,
+                            int forward_pin,
+                            int reverse_pin,
+                            int speed_pin,
+                            motor_state_t initial_state)
 {
     pinMode(forward_pin, OUTPUT);
     pinMode(reverse_pin, OUTPUT);
     motor_info->forward_pin = forward_pin;
     motor_info->reverse_pin = reverse_pin;
+    motor_info->speed_pin = speed_pin;
 
-    set_motor_state(motor_info, initial_state);
+    set_motor_speed(motor_info, initial_state);
 }
 
 /*************************************************************************//**
@@ -778,41 +796,25 @@ static int get_push_button_state(push_button_t *pin_info)
  * \param motor_info - Pointer to the motor button information.
  * \param new_state - The desired motor state (MOTOR_OFF/MOTOR_FORWARD/MOTOR_REVERSE)
  ****************************************************************************/
-static void set_motor_state(motor_t *motor_info, motor_state_t new_state)
+static void set_motor_speed(motor_t *motor_info, motor_state_t direction, unsigned char motor_speed)
 {
-    switch (new_state)
+    switch (direction)
     {
         case MOTOR_OFF:
             digitalWrite(motor_info->forward_pin, HIGH);
             digitalWrite(motor_info->reverse_pin, HIGH);
-            analogWrite(3, 255);
-            break;
-        case PUMP_OFF:
-            digitalWrite(motor_info->forward_pin, HIGH);
-            digitalWrite(motor_info->reverse_pin, HIGH);
-            analogWrite(11, 255);
+            analogWrite(motor_info->speed_pin, 255);
             break;
         case MOTOR_FORWARD:
             digitalWrite(motor_info->forward_pin, HIGH);
             digitalWrite(motor_info->reverse_pin, LOW);
-            analogWrite(3, 255);
+            analogWrite(motor_info->speed_pin, motor_speed);
             break;
-        case PUMP_FORWARD:
-            digitalWrite(motor_info->forward_pin, HIGH);
-            digitalWrite(motor_info->reverse_pin, LOW);
-            analogWrite(11, 130);
-            break;      
         case MOTOR_REVERSE:
             digitalWrite(motor_info->forward_pin, LOW);
             digitalWrite(motor_info->reverse_pin, HIGH);
-            analogWrite(3, 255);
+            analogWrite(motor_info->speed_pin, motor_speed);
             break;
-        case PUMP_REVERSE:
-            digitalWrite(motor_info->forward_pin, LOW);
-            digitalWrite(motor_info->reverse_pin, HIGH);
-            analogWrite(11, 255);
-            break;
-        
         default:
             handle_error("bad Motor state");
             break;
@@ -839,7 +841,7 @@ static void set_output_state(output_t *output_info, int new_state)
 static void display_text(const char *str)
 {
     lcd.clear();
-    lcd.setCursor(0,0);
+    lcd.setCursor(0, 0);
     lcd.print(str);
 }
 
@@ -853,9 +855,9 @@ static void display_text(const char *str)
 static void handle_error(const char *error_str)
 {
     lcd.clear();
-    lcd.setCursor(0,0);
+    lcd.setCursor(0, 0);
     lcd.print("Error");
-    lcd.setCursor(0,1);
+    lcd.setCursor(0, 1);
     lcd.print(error_str);
     while (1)
     {
@@ -864,5 +866,5 @@ static void handle_error(const char *error_str)
 }
 
 /*-----------------------------------------------------------------------------
-End of file
------------------------------------------------------------------------------*/
+ End of file
+ -----------------------------------------------------------------------------*/
