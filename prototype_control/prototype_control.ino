@@ -64,6 +64,15 @@
 #define FLOAT_SWITCH_DEBOUNCE_MS                    (100)
 #define POD_SWITCH_DEBOUNCE_MS                      (100)
 
+#define PUSH_BUTTON_INACTIVE                       (LOW)
+#define PUSH_BUTTON2_INACTIVE                      (LOW)
+#define FLOAT_SWITCH_INACTIVE                      (LOW)
+#define POD_SWITCH_INACTIVE                        (LOW)
+#define PUSH_BUTTON_ACTIVE                         (HIGH)
+#define PUSH_BUTTON2_ACTIVE                        (HIGH)
+#define FLOAT_SWITCH_ACTIVE                        (HIGH)
+#define POD_SWITCH_ACTIVE                          (HIGH)
+
 #define DISPENS_TIME_MS                             (5000)
 #define CLEAN_TIME_MS                               (5000)
 
@@ -210,10 +219,10 @@ void setup()
 {
     init_lcd();
 
-    init_push_button(&push_button, LOW, PIN_ID_PUSH_BUTTON, PUSH_BUTTON_DEBOUNCE_MS);
-    init_push_button(&float_switch, LOW, PIN_ID_FLOAT_SWITCH, FLOAT_SWITCH_DEBOUNCE_MS);
-    init_push_button(&pod_switch, LOW, PIN_ID_POD_SWITCH, POD_SWITCH_DEBOUNCE_MS);
-    init_push_button(&push_button2, LOW, PIN_ID_PUSH_BUTTON2, PUSH_BUTTON2_DEBOUNCE_MS);
+    init_push_button(&push_button, PUSH_BUTTON_INACTIVE, PIN_ID_PUSH_BUTTON, PUSH_BUTTON_DEBOUNCE_MS);
+    init_push_button(&float_switch, FLOAT_SWITCH_INACTIVE, PIN_ID_FLOAT_SWITCH, FLOAT_SWITCH_DEBOUNCE_MS);
+    init_push_button(&pod_switch, POD_SWITCH_INACTIVE, PIN_ID_POD_SWITCH, POD_SWITCH_DEBOUNCE_MS);
+    init_push_button(&push_button2, PUSH_BUTTON2_INACTIVE, PIN_ID_PUSH_BUTTON2, PUSH_BUTTON2_DEBOUNCE_MS);
 
     init_motor_pins(&dispensing_pump,
                     PIN_ID_DISPENSING_PUMP_PUMP_FORWARD,
@@ -344,7 +353,7 @@ static bool no_pod_state(event_t new_event)
              * isn't low. If it is then we need to go to the low water state not the
              * ready state */
             exit_pod_removed_state();
-            if (get_push_button_state(&float_switch) == HIGH)
+            if (get_push_button_state(&float_switch) == FLOAT_SWITCH_ACTIVE)
             {
                 enter_low_water_state();
             }
@@ -374,7 +383,7 @@ static bool low_water_state(event_t new_event)
             /* The water is full but the pos may be removed so just just where
              * we should go - pos removed or ready */
             exit_low_water_state();
-            if (get_push_button_state(&pod_switch) == HIGH)
+            if (get_push_button_state(&pod_switch) == POD_SWITCH_ACTIVE)
             {
                 enter_pod_removed_state();
             }
@@ -404,11 +413,11 @@ static bool dispensing_state(event_t new_event)
             /* We are done dispensing but may need to go to the pod removed
              * or the low water state instead of the ready state */
             exit_dispensing_state();
-            if (get_push_button_state(&pod_switch) == HIGH)
+            if (get_push_button_state(&pod_switch) == POD_SWITCH_ACTIVE)
             {
                 enter_pod_removed_state();
             }
-            else if (get_push_button_state(&float_switch) == HIGH)
+            else if (get_push_button_state(&float_switch) == FLOAT_SWITCH_ACTIVE)
             {
                 enter_low_water_state();
             }
@@ -438,7 +447,11 @@ static bool cleaning_state(event_t new_event)
             /* We are done cleaning but may need to go to 
              * the low water state instead of the ready state */
             exit_cleaning_state();
-            if (get_push_button_state(&float_switch) == HIGH)
+            if (get_push_button_state(&pod_switch) == POD_SWITCH_ACTIVE)
+            {
+                enter_pod_removed_state();
+            }
+            else if (get_push_button_state(&float_switch) == FLOAT_SWITCH_ACTIVE)
             {
                 enter_low_water_state();
             }
@@ -460,23 +473,23 @@ static bool cleaning_state(event_t new_event)
 static event_t check_for_new_events(void)
 {
     event_t event = EVENT_NONE;
-    if (check_for_push_button_event(&push_button, HIGH))
+    if (check_for_push_button_event(&push_button, PUSH_BUTTON_ACTIVE))
     {
         event = EVENT_DISPENSE;
     }
-    else if (check_for_push_button_event(&float_switch, LOW))
+    else if (check_for_push_button_event(&float_switch, FLOAT_SWITCH_INACTIVE))
     {
         event = EVENT_WATER_LEVEL_OKAY;
     }
-    else if (check_for_push_button_event(&float_switch, HIGH))
+    else if (check_for_push_button_event(&float_switch, FLOAT_SWITCH_ACTIVE))
     {
         event = EVENT_WATER_LEVEL_LOW;
     }
-    else if (check_for_push_button_event(&pod_switch, LOW))
+    else if (check_for_push_button_event(&pod_switch, POD_SWITCH_INACTIVE))
     {
         event = EVENT_POD_REPLACED;
     }
-    else if (check_for_push_button_event(&pod_switch, HIGH))
+    else if (check_for_push_button_event(&pod_switch, POD_SWITCH_ACTIVE))
     {
         event = EVENT_POD_REMOVED;
     }
@@ -484,7 +497,7 @@ static event_t check_for_new_events(void)
     {
         event = EVENT_TIMEOUT;
     }
-    else if (check_for_push_button_event(&push_button2, HIGH))
+    else if (check_for_push_button_event(&push_button2, PUSH_BUTTON2_ACTIVE))
     {
         event = EVENT_CLEAN;
     }
