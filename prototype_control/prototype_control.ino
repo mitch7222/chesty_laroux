@@ -73,8 +73,8 @@
 #define FLOAT_SWITCH_ACTIVE                        (HIGH)
 #define POD_SWITCH_ACTIVE                          (HIGH)
 
-#define DISPENS_TIME_MS                             (5000)
-#define CLEAN_TIME_MS                               (5000)
+#define DISPENS_TIME_MS                             (30000)
+#define CLEAN_TIME_MS                               (30000)
 
 #define TIMER_INVALID                               (0)
 
@@ -537,7 +537,7 @@ static void enter_dispensing_state(void)
 {
     display_text("Dispensing");
     //turn on dispensing pump & metering motor
-    set_motor_speed(&dispensing_pump, MOTOR_FORWARD, 130);
+    set_motor_speed(&dispensing_pump, MOTOR_FORWARD, 255);
     set_motor_speed(&metering_motor, MOTOR_FORWARD, 255);
 
     //turn off recirculating pump
@@ -570,7 +570,7 @@ static void enter_clean_state(void)
     display_text("Cleaning");
 
     //turn on dispensing pump
-    set_motor_speed(&dispensing_pump, MOTOR_FORWARD, 130);
+    set_motor_speed(&dispensing_pump, MOTOR_FORWARD, 255);
 
     //turn on UV LEDs
     set_output_state(&uv_led, HIGH);
@@ -740,7 +740,7 @@ static void init_motor_pins(motor_t *motor_info,
     motor_info->reverse_pin = reverse_pin;
     motor_info->speed_pin = speed_pin;
 
-    set_motor_speed(motor_info, initial_state);
+    set_motor_speed(motor_info, initial_state, 255);
 }
 
 /*************************************************************************//**
