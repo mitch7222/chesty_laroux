@@ -67,11 +67,11 @@
 #define PUSH_BUTTON_INACTIVE                       (LOW)
 #define PUSH_BUTTON2_INACTIVE                      (LOW)
 #define FLOAT_SWITCH_INACTIVE                      (LOW)
-#define POD_SWITCH_INACTIVE                        (LOW)
+#define POD_SWITCH_INACTIVE                        (HIGH)
 #define PUSH_BUTTON_ACTIVE                         (HIGH)
 #define PUSH_BUTTON2_ACTIVE                        (HIGH)
 #define FLOAT_SWITCH_ACTIVE                        (HIGH)
-#define POD_SWITCH_ACTIVE                          (HIGH)
+#define POD_SWITCH_ACTIVE                          (LOW)
 
 #define DISPENS_TIME_MS                             (30000)
 #define CLEAN_TIME_MS                               (30000)
